@@ -1,62 +1,106 @@
+import io
+import os
+import sys
+import time
 import boto3
-import cv2
-from cv2 import VideoCapture
-from recognize import recognize_faces
-from config import mode, device_id
-from datetime import datetime
+import logging
+import botocore
+import picamera
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+from PIL import Image
+from uuid import uuid4 as uuid
 from threading import Thread
+from datetime import datetime, timedelta
+from face_recognition import face_locations, face_encodings
 
-fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+from config import device_id, mode, duration
 
-cap = VideoCapture(0)
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(f'faces-recognition-{mode}')
+camera = picamera.PiCamera(resolution=(1024, 768))
 
-recognize_faces_thread = None
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout,
+)
 
-duration = 60 # seconds
-fps = 15
-videoWriter = None
-n_frames = 0
-prev_frame = datetime.utcnow()
+def recording(camera):
+    camera.start_recording('1.h264')
+    camera.wait_recording(5)
+    while True:
+        dt = datetime.utcnow()
+        timestamp = dt.timestamp()
+        
+        filename = f'{device_id}_{dt.year}_{dt.month}_{dt.day}_{dt.hour}_{dt.minute}_{dt.second}.h264'
+        
+        camera.split_recording(filename)
+        camera.wait_recording(duration)
+        
+        # Moving ready video to recordings folder
+        os.replace(filename, os.path.join('recordings', filename))
+        
+    camera.stop_recording()
+    
+def video_uploading():
+    # Uploading videos from recordings folder
+    s3_client = boto3.client('s3')
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(f'recordings-{mode}')
+    
+    # rds_client = boto3.client('rds')
+    # token = client.generate_db_auth_token(DBHostname=db_endpoint, Port=3306, DBUsername=db_user, Region='us-west-2')  
+    
+    while True:
+        files = os.listdir('recordings')
+        for filename in files:
+            try:
+                response = s3_client.upload_file(os.path.join('recordings', filename), f'surveillance-app-{mode}', filename)
+                os.remove(os.path.join('recordings', filename))
+                
+                str_date = list(map(int, filename.replace('.h264', '').split('_')[1:]))
+                start_datetime = datetime(*str_date)
+                print(start_datetime)
+                end_datetime = start_datetime + timedelta(seconds=duration)
+                print(end_datetime)
+                table.put_item(
+                    Item={
+                        'id': str(uuid()),
+                        'start_datetime': str(start_datetime),
+                        'end_datetime': str(end_datetime),
+                        'filename': filename,
+                    }
+                )
+                
+            except botocore.exceptions.EndpointConnectionError as e:
+                print('Video uploader connection error')
+                time.sleep(60)
 
-while datetime.utcnow().second != 0:
-    pass
+def face_recognition(camera):
+    while True:
+        stream = io.BytesIO()
+        camera.capture(stream, format='jpeg')
+        image = np.array(Image.open(stream), dtype=np.uint8)
+        plt.imsave('123.png', image)
+        locations = face_locations(image)
+        print(locations)
+        encodings = face_encodings(image, locations)
+        print([e[0] for e in encodings])
+        time.sleep(1)
 
+recording_thread = Thread(target=recording, args=(camera,))
+video_uploading_thread = Thread(target=video_uploading)
+face_recognition_thread = Thread(target=face_recognition, args=(camera,))
 
-while True:
+recording_thread.start()
+print('Recording thread started')
 
-    ret, frame = cap.read()
-    now = datetime.utcnow()
-    timestamp = now.timestamp()
-    if (now - prev_frame).microseconds < 1_000_000 // fps:
-        continue
-    prev_frame = now
+video_uploading_thread.start()
+print('Video uploading thread started')
 
-    if not ret:
-        print('Cannot get video stream')
-        exit(-1)
+# face_recognition_thread.start()
+# print('Face recognition thread start')
 
-    if videoWriter is None or n_frames == fps * duration:
-        if videoWriter is not None:
-            n_frames = 0
-            videoWriter.release()
-        videoWriter = cv2.VideoWriter(
-            filename=f'{device_id}_{now.year}_{now.month}_{now.day}_{now.hour}_{now.minute}.avi',
-            fourcc=fourcc,
-            fps=15,
-            frameSize=(frame.shape[0], frame.shape[1]),
-        )
+recording_thread.join()
 
-    frame = frame[:, :, ::-1]
-    videoWriter.write(frame)
-    n_frames += 1
-    print(n_frames, fps * duration)
-    # if recognize_faces_thread is None or not recognize_faces_thread.is_alive():
-    #     # print('123')
-    #     recognize_faces_thread = Thread(target=recognize_faces, args=(frame, timestamp, table))
-    #     recognize_faces_thread.start()
-    # recognize_faces(frame, timestamp, table)
-
-    # print(recognize_faces_thread, recognize_faces_thread.is_alive())
-    # print('1')
