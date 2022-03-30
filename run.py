@@ -2,7 +2,7 @@ import boto3
 import cv2
 from cv2 import VideoCapture
 from recognize import recognize_faces
-from credentials import mode, device_id
+from config import mode, device_id
 from datetime import datetime
 from threading import Thread
 

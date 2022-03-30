@@ -2,7 +2,7 @@ import boto3
 from face_recognition import face_locations, face_encodings
 from decimal import Decimal
 from uuid import uuid4 as uuid
-from credentials import device_id
+from config import device_id
 
 
 def recognize_faces(frame, timestamp, table):
