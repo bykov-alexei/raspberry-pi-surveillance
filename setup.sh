@@ -2,6 +2,8 @@
 # PYTHON_VERSION=3.9 
 # PYTHON_VERSION_SHORT=39
 
+apt install -y uuid-runtime
+
 # apt-get update
 # apt-get remove -y ffmpeg x264 libx264-dev
 # apt-get install -y python3-dev \
@@ -78,6 +80,8 @@
 #   /usr/local/lib/python${PYTHON_VERSION}/dist-packages/cv2.so
 
 # pip3 install face_recognition boto3
+
+mkdir /home/pi/.aws
 
 echo "[default]" > /home/pi/.aws/config
 echo "region=us-west-2" >> /home/pi/.aws/config
