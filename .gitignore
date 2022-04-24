@@ -1,3 +1,4 @@
 *.h264
 __pycache__/
 credentials.py
+config.py

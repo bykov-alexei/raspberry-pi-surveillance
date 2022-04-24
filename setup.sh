@@ -9,6 +9,8 @@ PYTHON_VERSION_SHORT=39
 
 apt install -y uuid-runtime
 
+cp surveillance.service /lib/systemd/system/
+
 apt-get update
 apt-get remove -y ffmpeg x264 libx264-dev
 apt-get install -y python3-dev \

@@ -1,0 +1,9 @@
+[Unit]
+Description=Surveillance
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/raspberry-pi-surveillance/run.py
+Restart=always
+User=pi
+[Install]
+WnatedBy=multi-user.target
