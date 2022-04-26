@@ -2,8 +2,8 @@
 Description=Surveillance
 After=network.target
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/raspberry-pi-surveillance/run.py
+ExecStart=/bin/bash /home/pi/raspberry-pi-surveillance/run.sh
 Restart=always
 User=pi
 [Install]
-WnatedBy=multi-user.target
+WantedBy=multi-user.target

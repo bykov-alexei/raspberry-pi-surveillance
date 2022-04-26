@@ -1,5 +1,6 @@
 import io
 import os
+import cv2
 import sys
 import time
 import boto3
@@ -20,33 +21,34 @@ from face_recognition import face_locations, face_encodings
 
 from config import device_id, mode, duration
 
-width = 1024
-height = 768
 
-camera = picamera.PiCamera(resolution=(width, height))
+os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;udp'
+codec = cv2.VideoWriter_fourcc(*'DIVX')
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)-8s %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    stream=sys.stdout,
-)
 
-def recording(camera):
-    camera.start_recording('1.h264')
-    camera.wait_recording(5)
+def recording():
+    cap = cv2.VideoCapture('rtsp://127.0.0.1:8554/')
+    
+    time.sleep(5)
+    
+    dt = datetime.utcnow()
+    filename = f'{device_id}_{dt.year}_{dt.month}_{dt.day}_{dt.hour}_{dt.minute}_{dt.second}.avi'
+    out = cv2.VideoWriter(filename, codec, 20.0, (640, 480))
+    
     while True:
-        dt = datetime.utcnow()
-        timestamp = dt.timestamp()
-        
-        filename = f'{device_id}_{dt.year}_{dt.month}_{dt.day}_{dt.hour}_{dt.minute}_{dt.second}.h264'
-        
-        camera.split_recording(filename)
-        camera.wait_recording(duration)
-        
-        # Moving ready video to recordings folder
-        os.replace(filename, os.path.join('recordings', filename))
-        
-    camera.stop_recording()
+        if (datetime.utcnow() - dt).seconds < duration * 60:
+            ret, frame = cap.read()
+            frame = cv2.resize(frame, (640, 480))
+            out.write(frame)
+        else:
+            out.release()
+            print('saved')
+            os.replace(filename, os.path.join('recordings', filename))
+            
+            dt = datetime.utcnow()
+            filename = f'{device_id}_{dt.year}_{dt.month}_{dt.day}_{dt.hour}_{dt.minute}_{dt.second}.avi'
+            out = cv2.VideoWriter(filename, codec, 20.0, (640, 480))
+
     
 def video_uploading():
     # Uploading videos from recordings folder
@@ -82,17 +84,22 @@ def video_uploading():
                 print('Video uploader connection error')
                 time.sleep(60)
 
-def face_recognition(camera):
+def face_recognition():
+    cap = cv2.VideoCapture('rtsp://127.0.0.1:8554/')
+    
     while True:
-        stream = io.BytesIO()
-        camera.capture(stream, format='jpeg')
+        # stream = io.BytesIO()
+        # camera.capture(stream, format='jpeg')
         dt = datetime.utcnow()
-        image = np.array(Image.open(stream), dtype=np.uint8)
+        ret, image = cap.read()
+        image = image[:, :, ::-1].astype(np.uint8)
+        # image = np.array(Image.open(stream), dtype=np.uint8)
         locations = face_locations(image)
+        print(locations)
         encodings = face_encodings(image, locations)
         if len(locations) > 0:
             with open(os.path.join('recognition', 'faces', str(uuid()) + '.pkl'), 'wb') as f:
-                pkl.dump((dt, locations, encodings), f)
+                pkl.dump((dt, locations, encodings, (cap.get(3), cap.get(4),)), f)
             
 def recognition_results_uploading():
     dynamodb = boto3.resource('dynamodb')
@@ -102,7 +109,7 @@ def recognition_results_uploading():
         faces_files = os.listdir(os.path.join('recognition', 'faces'))
         for filename in faces_files:
             with open(os.path.join('recognition', 'faces', filename), 'rb') as f:
-                dt, locations, encodings = pkl.load(f)
+                dt, locations, encodings, (width, height) = pkl.load(f)
             for location, encoding in zip(locations, encodings):
                 item = {
                     'id': str(uuid()),
@@ -117,9 +124,9 @@ def recognition_results_uploading():
                 faces_table.put_item(Item=item)
             os.remove(os.path.join('recognition', 'faces', filename))
             
-recording_thread = Thread(target=recording, args=(camera,))
+recording_thread = Thread(target=recording)
 video_uploading_thread = Thread(target=video_uploading)
-face_recognition_thread = Thread(target=face_recognition, args=(camera,))
+face_recognition_thread = Thread(target=face_recognition)
 recognition_uploading_thread = Thread(target=recognition_results_uploading)
 
 recording_thread.start()

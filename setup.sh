@@ -10,6 +10,7 @@ PYTHON_VERSION_SHORT=39
 apt install -y uuid-runtime
 
 cp surveillance.service /lib/systemd/system/
+chmod 644 /lib/systemd/system/surveillance.service
 
 apt-get update
 apt-get remove -y ffmpeg x264 libx264-dev
@@ -106,3 +107,7 @@ echo "Enter working mode (dev, prod)"
 read mode
 echo "mode=\"$mode\"" >> config.py
 echo "duration=30" >> config.py
+
+systemctl daemon-reload
+systemctl enable surveillance.service
+systemctl start surveillance.service
